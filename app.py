@@ -1,35 +1,99 @@
-from PIL import Image
-import pytesseract
-import cv2
-import numpy as np
+from google.cloud import vision
+import io
+import os
+from openai import OpenAI
 
-# Tesseractのインストールパスを指定
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# 環境変数からAPIキーを読み込む
+openai_api_key = os.getenv('OPENAI_API_KEY')
+if not openai_api_key:
+    raise Exception("APIキーが環境変数 'OPENAI_API_KEY' から取得できませんでした。")
 
-# 画像ファイルのパスを指定
-image_path = r"\S__161243140_0.jpg"
+client = OpenAI(api_key=openai_api_key)
 
-# 画像を開く（OpenCV形式で読み込み）
-img = cv2.imread(image_path)
+# ChatGPTを使って文章を整形するかどうかを設定するフラグ
+use_chatgpt = True  # Trueで使用、Falseで使用しない
 
-# グレースケール化
-gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+# ChatGPT APIを使用して文章を整形する関数
+def refine_text_with_chatgpt(text):
+    try:
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant that reviews and corrects text while ensuring the original meaning is preserved. Do not add any new content that is not present in the original text."},
+                {"role": "user", "content": f"Please review the following text, correct any grammatical mistakes, improve readability, and fix any incomplete or awkward sections without changing the original meaning:\n\n{text}"}
+            ]
+        )
+        # ChatCompletionMessage オブジェクトの正しいプロパティを参照
+        refined_text = completion.choices[0].message.content
+        return refined_text
+    except Exception as e:
+        print(f"Error calling ChatGPT API: {e}")
+        return text
 
-# ノイズ除去（GaussianBlurで平滑化）
-gray = cv2.GaussianBlur(gray, (5, 5), 0)
+# Google Cloud Vision APIのクライアントを作成
+client_vision = vision.ImageAnnotatorClient()
 
-# 二値化（閾値処理）
-_, binary_image = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
+# 画像フォルダのパスを指定
+image_folder_path = r"images"  # 画像フォルダのパスを指定
+output_file_path = r"text.txt"  # 出力するテキストファイルのパスを指定
 
-# 画像を表示（オプション：処理後の画像確認）
-# cv2.imshow("Processed Image", binary_image)
-# cv2.waitKey(0)
+# フォルダ内の画像ファイルを取得
+image_files = [f for f in os.listdir(image_folder_path) if f.endswith(('.png', '.jpg', '.jpeg'))]
 
-# PIL形式に変換
-pil_img = Image.fromarray(binary_image)
+# 総画像数
+total_images = len(image_files)
+completed_images = 0
 
-# 画像から日本語テキストを抽出
-text = pytesseract.image_to_string(pil_img, lang="jpn")
+# 10枚ごとにまとめたテキスト
+batch_text = ""
 
-# 抽出されたテキストを表示
-print(text)
+# 出力ファイルを開いて書き込みモードに設定
+with open(output_file_path, 'w', encoding='utf-8') as output_file:
+
+    # 画像ごとに処理を行う
+    for image_index, image_file in enumerate(image_files):
+        image_path = os.path.join(image_folder_path, image_file)
+
+        # 画像を読み込む
+        with io.open(image_path, 'rb') as image_file:
+            content = image_file.read()
+
+        # Vision API用に画像データを設定
+        image = vision.Image(content=content)
+
+        # 画像内のテキストを検出
+        response = client_vision.text_detection(image=image)
+        texts = response.text_annotations
+
+        # テキストが存在する場合のみ処理を行う
+        if texts:
+            # 抽出されたテキスト（最初の結果が全文）
+            raw_text = texts[0].description
+            # 空白は削除し、改行はそのまま保持
+            clean_text = raw_text.strip()
+            # 10枚分のテキストをバッチとしてまとめる
+            batch_text += clean_text + "\n\n"
+
+        else:
+            batch_text += "テキストが検出されませんでした。\n\n"
+
+        # 処理済みの画像数を増やす
+        completed_images += 1
+
+        # 進捗を棒グラフとして表示
+        progress_bar = "#" * completed_images + "-" * (total_images - completed_images)
+        print(f"[{progress_bar}] {completed_images}/{total_images} images processed")
+
+        # 10枚ごとにChatGPTに送信して整形する（フラグがTrueの場合のみ）
+        if completed_images % 10 == 0 or completed_images == total_images:
+            if use_chatgpt:
+                print(f"ChatGPTに送信中")
+                refined_text = refine_text_with_chatgpt(batch_text)
+                output_file.write(refined_text)
+            else:
+                output_file.write(batch_text)
+
+            # 次のバッチのためにテキストをクリア
+            batch_text = ""
+
+print(f"テキストが {output_file_path} に保存されました。")
