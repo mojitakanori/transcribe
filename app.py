@@ -19,8 +19,8 @@ def refine_text_with_chatgpt(text):
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a helpful assistant that reviews and corrects text while ensuring the original meaning is preserved. Do not add any new content that is not present in the original text."},
-                {"role": "user", "content": f"Please review the following text, correct any grammatical mistakes, improve readability, and fix any incomplete or awkward sections without changing the original meaning:\n\n{text}"}
+                {"role": "system", "content": "You are a helpful assistant that reviews and corrects text while ensuring the original meaning is preserved. Do not add any new content that is not present in the original text. The output must be in Japanese."},
+                {"role": "user", "content": f"Please review the following text, correct any grammatical mistakes, improve readability, and fix any incomplete or awkward sections without changing the original meaning. The output must be in Japanese:\n\n{text}"}
             ]
         )
         # ChatCompletionMessage オブジェクトの正しいプロパティを参照
@@ -44,11 +44,8 @@ image_files = [f for f in os.listdir(image_folder_path) if f.endswith(('.png', '
 total_images = len(image_files)
 completed_images = 0
 
-# 10枚ごとにまとめたテキスト
-batch_text = ""
-
-# 出力ファイルを開いて書き込みモードに設定
-with open(output_file_path, 'w', encoding='utf-8') as output_file:
+# 出力ファイルを開いて追記モードに設定
+with open(output_file_path, 'a', encoding='utf-8') as output_file:
 
     # 画像ごとに処理を行う
     for image_index, image_file in enumerate(image_files):
@@ -71,11 +68,8 @@ with open(output_file_path, 'w', encoding='utf-8') as output_file:
             raw_text = texts[0].description
             # 空白は削除し、改行はそのまま保持
             clean_text = raw_text.strip()
-            # 10枚分のテキストをバッチとしてまとめる
-            batch_text += clean_text + "\n\n"
-
         else:
-            batch_text += "テキストが検出されませんでした。\n\n"
+            clean_text = "テキストが検出されませんでした。\n\n"
 
         # 処理済みの画像数を増やす
         completed_images += 1
@@ -84,16 +78,12 @@ with open(output_file_path, 'w', encoding='utf-8') as output_file:
         progress_bar = "#" * completed_images + "-" * (total_images - completed_images)
         print(f"[{progress_bar}] {completed_images}/{total_images} images processed")
 
-        # 10枚ごとにChatGPTに送信して整形する（フラグがTrueの場合のみ）
-        if completed_images % 10 == 0 or completed_images == total_images:
-            if use_chatgpt:
-                print(f"ChatGPTに送信中")
-                refined_text = refine_text_with_chatgpt(batch_text)
-                output_file.write(refined_text)
-            else:
-                output_file.write(batch_text)
-
-            # 次のバッチのためにテキストをクリア
-            batch_text = ""
+        # ChatGPTでテキストを整形する（フラグがTrueの場合のみ）
+        if use_chatgpt:
+            print(f"ChatGPTに送信中: 画像 {completed_images}/{total_images}")
+            refined_text = refine_text_with_chatgpt(clean_text)
+            output_file.write(refined_text + "\n\n")
+        else:
+            output_file.write(clean_text + "\n\n")
 
 print(f"テキストが {output_file_path} に保存されました。")
