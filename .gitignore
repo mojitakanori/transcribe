@@ -1,2 +1,4 @@
 images
 text.txt
+.env
+service_account_file.json

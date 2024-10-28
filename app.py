@@ -2,11 +2,18 @@ from google.cloud import vision
 import io
 import os
 from openai import OpenAI
+from dotenv import load_dotenv
+
+# 環境変数をロード
+load_dotenv()
 
 # 環境変数からAPIキーを読み込む
 openai_api_key = os.getenv('OPENAI_API_KEY')
-if not openai_api_key:
-    raise Exception("APIキーが環境変数 'OPENAI_API_KEY' から取得できませんでした。")
+
+# Google Cloud Vision APIクライアントの初期化
+# 認証情報ファイルのパスを指定
+google_credential_path = "service_account_file.json"  # JSONファイルの名前
+client_vision = vision.ImageAnnotatorClient.from_service_account_json(google_credential_path)
 
 client = OpenAI(api_key=openai_api_key)
 
@@ -30,8 +37,6 @@ def refine_text_with_chatgpt(text):
         print(f"Error calling ChatGPT API: {e}")
         return text
 
-# Google Cloud Vision APIのクライアントを作成
-client_vision = vision.ImageAnnotatorClient()
 
 # 画像フォルダのパスを指定
 image_folder_path = r"images"  # 画像フォルダのパスを指定
